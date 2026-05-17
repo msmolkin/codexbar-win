@@ -32,6 +32,36 @@ function Write-Log {
 }
 
 # --- Credential Readers ---
+function Refresh-ClaudeToken {
+    param([string]$RefreshToken, [string]$CredFile)
+    try {
+        $body = @{
+            grant_type    = "refresh_token"
+            refresh_token = $RefreshToken
+            client_id     = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        }
+        $response = Invoke-RestMethod -Uri "https://platform.claude.com/v1/oauth/token" `
+            -Method Post -Body ($body | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 15
+
+        if ($response.access_token) {
+            $creds = Get-Content $CredFile -Raw | ConvertFrom-Json
+            $creds.claudeAiOauth.accessToken = $response.access_token
+            if ($response.refresh_token) {
+                $creds.claudeAiOauth.refreshToken = $response.refresh_token
+            }
+            if ($response.expires_in) {
+                $creds.claudeAiOauth.expiresAt = [DateTimeOffset]::UtcNow.AddSeconds($response.expires_in).ToString("o")
+            }
+            $creds | ConvertTo-Json -Depth 10 | Set-Content $CredFile -Encoding UTF8
+            Write-Log "Claude: token refreshed successfully"
+            return $response.access_token
+        }
+    } catch {
+        Write-Log "Claude: token refresh failed: $_" "WARN"
+    }
+    return $null
+}
+
 function Get-ClaudeOAuthToken {
     # Strategy 1: Read from ~/.claude/.credentials.json
     $credFile = Join-Path $env:USERPROFILE ".claude\.credentials.json"
@@ -39,6 +69,22 @@ function Get-ClaudeOAuthToken {
         try {
             $creds = Get-Content $credFile -Raw | ConvertFrom-Json
             if ($creds.claudeAiOauth.accessToken) {
+                $expired = $false
+                if ($creds.claudeAiOauth.expiresAt) {
+                    try {
+                        $expiresAt = [DateTimeOffset]::Parse($creds.claudeAiOauth.expiresAt).UtcDateTime
+                        $expired = $expiresAt -lt [DateTime]::UtcNow
+                    } catch {}
+                }
+
+                if ($expired -and $creds.claudeAiOauth.refreshToken) {
+                    Write-Log "Claude: token expired, refreshing..."
+                    $newToken = Refresh-ClaudeToken -RefreshToken $creds.claudeAiOauth.refreshToken -CredFile $credFile
+                    if ($newToken) {
+                        return @{ Token = $newToken; Source = "credentials-file-refreshed" }
+                    }
+                }
+
                 Write-Log "Claude: loaded token from .credentials.json"
                 return @{
                     Token = $creds.claudeAiOauth.accessToken
@@ -376,7 +422,10 @@ function Update-Usage {
         $maxUsage = [math]::Max($maxUsage, $fiveHr)
     } else {
         $script:ClaudeMenuItem.Text = "Claude: Not connected"
-        $script:ClaudeDetailItem.Text = "  Run 'claude' to authenticate"
+        $script:ClaudeDetailItem.Text = "  Click to authenticate..."
+        $script:ClaudeDetailItem.Add_Click({
+            Start-Process "cmd.exe" "/c claude && pause"
+        })
     }
 
     # --- Codex ---
