@@ -454,7 +454,7 @@ function Update-Usage {
                 if (-not $claudePath) { $claudePath = "claude" }
                 $authDir = Join-Path $env:TEMP "codexbar-auth-$(Get-Random)"
                 New-Item -ItemType Directory -Path $authDir -Force | Out-Null
-                Start-Process "cmd.exe" -ArgumentList "/c `"$claudePath`" && pause" -WorkingDirectory $authDir
+                Start-Process "cmd.exe" -ArgumentList "/c cd /d `"$authDir`" && `"$claudePath`" && pause"
             })
         }
     }
