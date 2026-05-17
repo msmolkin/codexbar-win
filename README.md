@@ -19,17 +19,17 @@ Inspired by [CodexBar](https://github.com/steipete/CodexBar) for macOS by [@stei
 ## Install
 
 ```powershell
-# Clone or download this folder, then:
-.\Start-CodexBar.bat
-
-# Or run directly:
-powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File CodexBar.ps1
+# Clone or download, then run:
+powershell -ExecutionPolicy Bypass -File CodexBar.ps1
 ```
 
-## Add to Startup
+On first run, it asks whether to start automatically on login. That's it.
+
+You can also manage startup manually:
 
 ```powershell
-.\Install-Startup.ps1
+.\CodexBar.ps1 -Install    # add to startup silently
+.\CodexBar.ps1 -Uninstall  # remove from startup
 ```
 
 ## Authentication
@@ -48,6 +48,8 @@ CodexBar reads your existing CLI credentials — no separate login required:
 |-------|---------|-------------|
 | `-PollIntervalSeconds` | 60 | How often to refresh usage |
 | `-Debug` | false | Print log output to console |
+| `-Install` | — | Add to Windows startup and exit |
+| `-Uninstall` | — | Remove from Windows startup and exit |
 
 ## Security
 
