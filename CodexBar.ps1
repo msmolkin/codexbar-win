@@ -411,7 +411,21 @@ function Start-CodexBarTray {
     Update-Usage
 
     Write-Log "CodexBar started (poll=${PollIntervalSeconds}s)"
-    [System.Windows.Forms.Application]::Run()
+
+    [Console]::CancelKeyPress.Add({
+        param($sender, $e)
+        $e.Cancel = $true
+        $script:NotifyIcon.Visible = $false
+        $script:NotifyIcon.Dispose()
+        [System.Windows.Forms.Application]::Exit()
+    })
+
+    try {
+        [System.Windows.Forms.Application]::Run()
+    } finally {
+        $script:NotifyIcon.Visible = $false
+        $script:NotifyIcon.Dispose()
+    }
 }
 
 function Update-Usage {
@@ -436,9 +450,11 @@ function Update-Usage {
         if (-not $script:ClaudeAuthClickWired) {
             $script:ClaudeAuthClickWired = $true
             $script:ClaudeDetailItem.Add_Click({
-                $authDir = Join-Path $env:TEMP "codexbar-authenticate"
-                if (-not (Test-Path $authDir)) { New-Item -ItemType Directory -Path $authDir -Force | Out-Null }
-                Start-Process "cmd.exe" "/c claude && pause" -WorkingDirectory $authDir
+                $claudePath = (Get-Command claude -ErrorAction SilentlyContinue).Source
+                if (-not $claudePath) { $claudePath = "claude" }
+                $authDir = Join-Path $env:TEMP "codexbar-auth-$(Get-Random)"
+                New-Item -ItemType Directory -Path $authDir -Force | Out-Null
+                Start-Process "cmd.exe" -ArgumentList "/c `"$claudePath`" && pause" -WorkingDirectory $authDir
             })
         }
     }
