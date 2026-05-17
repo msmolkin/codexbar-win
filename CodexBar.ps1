@@ -306,32 +306,42 @@ function Get-UsageColor {
 }
 
 function Get-TrayIcon {
-    param([double]$MaxUsage)
-    # Generate a simple colored circle icon based on usage level
+    param([double]$MaxUsage, [bool]$NotConnected = $false)
     $size = 16
     $bmp = New-Object System.Drawing.Bitmap($size, $size)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
 
-    $color = if ($MaxUsage -lt 50) { [System.Drawing.Color]::FromArgb(82, 208, 23) }      # Green
-             elseif ($MaxUsage -lt 75) { [System.Drawing.Color]::FromArgb(255, 215, 0) }   # Yellow
-             elseif ($MaxUsage -lt 90) { [System.Drawing.Color]::FromArgb(255, 140, 0) }   # Orange
-             else { [System.Drawing.Color]::FromArgb(255, 68, 68) }                         # Red
+    if ($NotConnected) {
+        # Gray circle with a white "!" for unauthenticated state
+        $color = [System.Drawing.Color]::FromArgb(120, 120, 120)
+        $brush = New-Object System.Drawing.SolidBrush($color)
+        $g.FillEllipse($brush, 1, 1, $size - 2, $size - 2)
+        $font = New-Object System.Drawing.Font("Arial", 9, [System.Drawing.FontStyle]::Bold)
+        $textBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+        $g.DrawString("!", $font, $textBrush, 4, 0)
+        $font.Dispose()
+        $textBrush.Dispose()
+        $brush.Dispose()
+    } else {
+        $color = if ($MaxUsage -lt 50) { [System.Drawing.Color]::FromArgb(82, 208, 23) }
+                 elseif ($MaxUsage -lt 75) { [System.Drawing.Color]::FromArgb(255, 215, 0) }
+                 elseif ($MaxUsage -lt 90) { [System.Drawing.Color]::FromArgb(255, 140, 0) }
+                 else { [System.Drawing.Color]::FromArgb(255, 68, 68) }
 
-    $brush = New-Object System.Drawing.SolidBrush($color)
-    $g.FillEllipse($brush, 1, 1, $size - 2, $size - 2)
+        $brush = New-Object System.Drawing.SolidBrush($color)
+        $g.FillEllipse($brush, 1, 1, $size - 2, $size - 2)
 
-    # Draw usage percentage arc (dark overlay for used portion)
-    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(60, 0, 0, 0), 2)
-    $sweepAngle = [math]::Min(360, $MaxUsage * 3.6)
-    if ($sweepAngle -gt 0) {
-        $g.DrawArc($pen, 2, 2, $size - 4, $size - 4, -90, $sweepAngle)
+        $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(60, 0, 0, 0), 2)
+        $sweepAngle = [math]::Min(360, $MaxUsage * 3.6)
+        if ($sweepAngle -gt 0) {
+            $g.DrawArc($pen, 2, 2, $size - 4, $size - 4, -90, $sweepAngle)
+        }
+        $pen.Dispose()
+        $brush.Dispose()
     }
 
     $g.Dispose()
-    $brush.Dispose()
-    $pen.Dispose()
-
     $hIcon = $bmp.GetHicon()
     $icon = [System.Drawing.Icon]::FromHandle($hIcon)
     return $icon
@@ -471,12 +481,17 @@ function Update-Usage {
     }
 
     # Update tray icon and tooltip
+    $anyConnected = ($null -ne $claudeUsage) -or ($null -ne $codexUsage)
     $oldIcon = $script:NotifyIcon.Icon
-    $script:NotifyIcon.Icon = Get-TrayIcon -MaxUsage $maxUsage
+    $script:NotifyIcon.Icon = Get-TrayIcon -MaxUsage $maxUsage -NotConnected (-not $anyConnected)
 
     $tooltip = "CodexBar"
-    if ($claudeUsage) { $tooltip += "`nClaude: $($claudeUsage.FiveHour.Utilization)%" }
-    if ($codexUsage -and $codexUsage.Windows.Count -gt 0) { $tooltip += "`nCodex: $($codexUsage.Windows[0].UsedPercent)%" }
+    if (-not $anyConnected) {
+        $tooltip += "`nNot authenticated"
+    } else {
+        if ($claudeUsage) { $tooltip += "`nClaude: $($claudeUsage.FiveHour.Utilization)%" }
+        if ($codexUsage -and $codexUsage.Windows.Count -gt 0) { $tooltip += "`nCodex: $($codexUsage.Windows[0].UsedPercent)%" }
+    }
     $script:NotifyIcon.Text = $tooltip.Substring(0, [math]::Min(63, $tooltip.Length))
 
     if ($oldIcon) {
