@@ -47,9 +47,11 @@ Write-Host ""
 # --- Test 1: Script loads without error ---
 Write-Host "[1] Script parsing..." -ForegroundColor Yellow
 try {
+    $tokens = $null
+    $parseErrors = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-        "$PSScriptRoot\CodexBar.ps1", [ref]$null, [ref]$errors)
-    Assert-Equal 0 $errors.Count "Zero parse errors"
+        "$PSScriptRoot\CodexBar.ps1", [ref]$tokens, [ref]$parseErrors)
+    Assert-Equal 0 $parseErrors.Count "Zero parse errors"
     Assert-True ($ast.EndBlock.Statements.Count -gt 0) "Has executable statements"
 } catch {
     Write-Host "  FAIL: Script parse threw exception: $_" -ForegroundColor Red
