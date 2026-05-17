@@ -423,11 +423,14 @@ function Update-Usage {
     } else {
         $script:ClaudeMenuItem.Text = "Claude: Not connected"
         $script:ClaudeDetailItem.Text = "  Click to authenticate..."
-        $script:ClaudeDetailItem.Add_Click({
-            $authDir = Join-Path $env:TEMP "codexbar-authenticate"
-            if (-not (Test-Path $authDir)) { New-Item -ItemType Directory -Path $authDir -Force | Out-Null }
-            Start-Process "cmd.exe" "/c claude && pause" -WorkingDirectory $authDir
-        })
+        if (-not $script:ClaudeAuthClickWired) {
+            $script:ClaudeAuthClickWired = $true
+            $script:ClaudeDetailItem.Add_Click({
+                $authDir = Join-Path $env:TEMP "codexbar-authenticate"
+                if (-not (Test-Path $authDir)) { New-Item -ItemType Directory -Path $authDir -Force | Out-Null }
+                Start-Process "cmd.exe" "/c claude && pause" -WorkingDirectory $authDir
+            })
+        }
     }
 
     # --- Codex ---
