@@ -170,36 +170,55 @@ function Fetch-ClaudeUsage {
     param([hashtable]$Creds)
     if (-not $Creds) { return $null }
 
-    try {
-        $headers = @{
-            "Authorization"  = "Bearer $($Creds.Token)"
-            "Accept"         = "application/json"
-            "Content-Type"   = "application/json"
-            "anthropic-beta" = "oauth-2025-04-20"
-            "User-Agent"     = "CodexBar-Win/1.0"
-        }
-
-        $response = Invoke-RestMethod -Uri "https://api.anthropic.com/api/oauth/usage" `
-            -Method Get -Headers $headers -TimeoutSec 15 -ErrorAction Stop
-
-        $result = @{
-            Provider = "Claude"
-            FiveHour = @{
-                Utilization = [math]::Round($response.five_hour.utilization, 1)
-                ResetsAt    = $response.five_hour.resets_at
+    $token = $Creds.Token
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+        try {
+            $headers = @{
+                "Authorization"  = "Bearer $token"
+                "Accept"         = "application/json"
+                "Content-Type"   = "application/json"
+                "anthropic-beta" = "oauth-2025-04-20"
+                "User-Agent"     = "CodexBar-Win/1.0"
             }
-            SevenDay = @{
-                Utilization = [math]::Round($response.seven_day.utilization, 1)
-                ResetsAt    = $response.seven_day.resets_at
-            }
-        }
 
-        Write-Log "Claude: 5h=$($result.FiveHour.Utilization)% 7d=$($result.SevenDay.Utilization)%"
-        return $result
-    } catch {
-        Write-Log "Claude: API error: $_" "ERROR"
-        return $null
+            $response = Invoke-RestMethod -Uri "https://api.anthropic.com/api/oauth/usage" `
+                -Method Get -Headers $headers -TimeoutSec 15 -ErrorAction Stop
+
+            $result = @{
+                Provider = "Claude"
+                FiveHour = @{
+                    Utilization = [math]::Round($response.five_hour.utilization, 1)
+                    ResetsAt    = $response.five_hour.resets_at
+                }
+                SevenDay = @{
+                    Utilization = [math]::Round($response.seven_day.utilization, 1)
+                    ResetsAt    = $response.seven_day.resets_at
+                }
+            }
+
+            Write-Log "Claude: 5h=$($result.FiveHour.Utilization)% 7d=$($result.SevenDay.Utilization)%"
+            return $result
+        } catch {
+            $statusCode = $_.Exception.Response.StatusCode.value__
+            if ($statusCode -eq 401 -and $attempt -eq 0) {
+                Write-Log "Claude: 401, attempting token refresh..." "WARN"
+                $credFile = Join-Path $env:USERPROFILE ".claude\.credentials.json"
+                if (Test-Path $credFile) {
+                    $creds = Get-Content $credFile -Raw | ConvertFrom-Json
+                    if ($creds.claudeAiOauth.refreshToken) {
+                        $newToken = Refresh-ClaudeToken -RefreshToken $creds.claudeAiOauth.refreshToken -CredFile $credFile
+                        if ($newToken) {
+                            $token = $newToken
+                            continue
+                        }
+                    }
+                }
+            }
+            Write-Log "Claude: API error: $_" "ERROR"
+            return $null
+        }
     }
+    return $null
 }
 
 function Fetch-CodexUsage {
@@ -450,11 +469,12 @@ function Update-Usage {
         if (-not $script:ClaudeAuthClickWired) {
             $script:ClaudeAuthClickWired = $true
             $script:ClaudeDetailItem.Add_Click({
-                $claudePath = (Get-Command claude -ErrorAction SilentlyContinue).Source
-                if (-not $claudePath) { $claudePath = "claude" }
-                $authDir = Join-Path $env:TEMP "codexbar-auth-$(Get-Random)"
-                New-Item -ItemType Directory -Path $authDir -Force | Out-Null
-                Start-Process "cmd.exe" -ArgumentList "/c cd /d `"$authDir`" && `"$claudePath`" && pause"
+                $authDir = Join-Path ([System.IO.Path]::GetTempPath()) "codexbar-auth"
+                if (Test-Path $authDir) { Remove-Item $authDir -Recurse -Force }
+                [System.IO.Directory]::CreateDirectory($authDir) | Out-Null
+                $batFile = Join-Path $authDir "authenticate.bat"
+                Set-Content -Path $batFile -Value "@echo off`r`ncd /d `"$authDir`"`r`nclaude`r`npause" -Encoding ASCII
+                Start-Process $batFile
             })
         }
     }
