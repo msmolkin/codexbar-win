@@ -7,8 +7,64 @@
 
 param(
     [switch]$Debug,
+    [switch]$Install,
+    [switch]$Uninstall,
     [int]$PollIntervalSeconds = 60
 )
+
+# --- First-run install prompt ---
+$startupDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup"
+$shortcutPath = Join-Path $startupDir "CodexBar.lnk"
+$scriptPath = $MyInvocation.MyCommand.Path
+$configDir = Join-Path $env:USERPROFILE ".codexbar-win"
+$installedMarker = Join-Path $configDir ".installed"
+
+if ($Uninstall) {
+    if (Test-Path $shortcutPath) {
+        Remove-Item $shortcutPath -Force
+        Write-Host "CodexBar removed from startup."
+    } else {
+        Write-Host "CodexBar was not in startup."
+    }
+    if (Test-Path $installedMarker) { Remove-Item $installedMarker -Force }
+    exit 0
+}
+
+if ($Install) {
+    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
+    $shell = New-Object -ComObject WScript.Shell
+    $lnk = $shell.CreateShortcut($shortcutPath)
+    $lnk.TargetPath = "powershell.exe"
+    $lnk.Arguments = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`""
+    $lnk.WorkingDirectory = Split-Path $scriptPath
+    $lnk.Description = "CodexBar - AI Usage Monitor"
+    $lnk.Save()
+    Set-Content -Path $installedMarker -Value (Get-Date -Format o)
+    Write-Host "CodexBar installed. Will start on login."
+    exit 0
+}
+
+if (-not (Test-Path $installedMarker)) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        "Would you like CodexBar to start automatically when you log in?",
+        "CodexBar Setup",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Question)
+
+    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
+
+    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+        $shell = New-Object -ComObject WScript.Shell
+        $lnk = $shell.CreateShortcut($shortcutPath)
+        $lnk.TargetPath = "powershell.exe"
+        $lnk.Arguments = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`""
+        $lnk.WorkingDirectory = Split-Path $scriptPath
+        $lnk.Description = "CodexBar - AI Usage Monitor"
+        $lnk.Save()
+    }
+    Set-Content -Path $installedMarker -Value (Get-Date -Format o)
+}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
